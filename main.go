@@ -7,12 +7,14 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
+	"strconv"
+	"time"
 
 	"github.com/google/jsonapi"
 	"github.com/gorilla/mux"
 )
 
-func TfcCallback(callbackUrl string, accessToken string, body *RunTaskResponse) error {
+func TfcCallback(callbackUrl string, accessToken string, body *RunTaskResponse, timeout string) error {
 	out := bytes.NewBuffer(nil)
 	if err := jsonapi.MarshalPayload(out, body); err != nil {
 		return err
@@ -28,11 +30,29 @@ func TfcCallback(callbackUrl string, accessToken string, body *RunTaskResponse) 
 		return err
 	}
 
-	_, err = client.Do(request)
+	if timeout != "" {
+		i, _ := strconv.Atoi(timeout)
+		time.Sleep(time.Duration(i) * time.Second)
+		_, err = client.Do(request)
+	} else {
+		_, err = client.Do(request)
+	}
+
 	return err
 }
 
 func SuccessfulRunTask(w http.ResponseWriter, r *http.Request) {
+	timeout := r.URL.Query().Get("timeout")
+	if timeout != "" {
+		i, err := strconv.Atoi(timeout)
+		if err != nil {
+			http.Error(w, "timeout query param must be a string", http.StatusInternalServerError)
+		}
+		if i <= 0 {
+			http.Error(w, "timeout query param must be greater than 0 seconds", http.StatusInternalServerError)
+		}
+	}
+
 	reqBody, _ := ioutil.ReadAll(r.Body)
 	var runTaskReq RunTaskRequest
 	json.Unmarshal(reqBody, &runTaskReq)
@@ -43,12 +63,23 @@ func SuccessfulRunTask(w http.ResponseWriter, r *http.Request) {
 		Url:     "http://localhost:10000/success",
 	}
 
-	if err := TfcCallback(runTaskReq.TaskResultCallbackUrl, runTaskReq.AccessToken, runTaskResp); err != nil {
+	if err := TfcCallback(runTaskReq.TaskResultCallbackUrl, runTaskReq.AccessToken, runTaskResp, timeout); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 }
 
 func FailedRunTask(w http.ResponseWriter, r *http.Request) {
+	timeout := r.URL.Query().Get("timeout")
+	if timeout != "" {
+		i, err := strconv.Atoi(timeout)
+		if err != nil {
+			http.Error(w, "timeout query param must be a string", http.StatusInternalServerError)
+		}
+		if i <= 0 {
+			http.Error(w, "timeout query param must be greater than 0 seconds", http.StatusInternalServerError)
+		}
+	}
+
 	reqBody, _ := ioutil.ReadAll(r.Body)
 	var runTaskReq RunTaskRequest
 	json.Unmarshal(reqBody, &runTaskReq)
@@ -59,7 +90,7 @@ func FailedRunTask(w http.ResponseWriter, r *http.Request) {
 		Url:     "http://localhost:10000/failed",
 	}
 
-	if err := TfcCallback(runTaskReq.TaskResultCallbackUrl, runTaskReq.AccessToken, runTaskResp); err != nil {
+	if err := TfcCallback(runTaskReq.TaskResultCallbackUrl, runTaskReq.AccessToken, runTaskResp, timeout); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 }
