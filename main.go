@@ -9,6 +9,7 @@ import (
 	"net/http"
 
 	"github.com/google/jsonapi"
+	"github.com/gorilla/mux"
 )
 
 func TfcCallback(callbackUrl string, accessToken string, body *RunTaskResponse) error {
@@ -32,10 +33,6 @@ func TfcCallback(callbackUrl string, accessToken string, body *RunTaskResponse) 
 }
 
 func SuccessfulRunTask(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-	}
-
 	reqBody, _ := ioutil.ReadAll(r.Body)
 	var runTaskReq RunTaskRequest
 	json.Unmarshal(reqBody, &runTaskReq)
@@ -52,10 +49,6 @@ func SuccessfulRunTask(w http.ResponseWriter, r *http.Request) {
 }
 
 func FailedRunTask(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-	}
-
 	reqBody, _ := ioutil.ReadAll(r.Body)
 	var runTaskReq RunTaskRequest
 	json.Unmarshal(reqBody, &runTaskReq)
@@ -72,18 +65,15 @@ func FailedRunTask(w http.ResponseWriter, r *http.Request) {
 }
 
 func Root(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-	}
-
-	w.WriteHeader(200)
 	fmt.Fprintf(w, "TFC Run Tasks Server root")
 }
 
 func handleRequests() {
-	http.HandleFunc("/", Root)
-	http.HandleFunc("/success", SuccessfulRunTask)
-	http.HandleFunc("/failed", FailedRunTask)
+	r := mux.NewRouter()
+	r.HandleFunc("/", Root).Methods("GET")
+	r.HandleFunc("/success", SuccessfulRunTask).Methods("POST")
+	r.HandleFunc("/failed", FailedRunTask).Methods("POST")
+	http.Handle("/", r)
 	log.Fatal(http.ListenAndServe(":10000", nil))
 }
 
