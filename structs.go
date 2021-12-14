@@ -32,3 +32,14 @@ type RunTaskResponse struct {
 	Message string `jsonapi:"attr,message"`
 	Url     string `jsonapi:"attr,url"`
 }
+
+type TfcWebhookJob struct {
+	Response    *RunTaskResponse
+	AccessToken string
+	CallbackUrl string
+	Timeout     string
+}
+
+type TfcWebhookManager struct {
+	jobs chan *TfcWebhookJob
+}

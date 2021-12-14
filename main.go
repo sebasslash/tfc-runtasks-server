@@ -14,6 +14,24 @@ import (
 	"github.com/gorilla/mux"
 )
 
+func (m *TfcWebhookManager) sendWebhookResponse() {
+	log.Println("Register worker")
+	for {
+		select {
+		case job := <-m.jobs:
+			log.Printf("Received job with message: %s \n", job.Response.Message)
+			go func() {
+				err := TfcCallback(job.CallbackUrl, job.AccessToken, job.Response, job.Timeout)
+				if err != nil {
+					log.Printf("Error: %s \n", err.Error())
+				}
+			}()
+		default:
+		}
+	}
+
+}
+
 func TfcCallback(callbackUrl string, accessToken string, body *RunTaskResponse, timeout string) error {
 	out := bytes.NewBuffer(nil)
 	if err := jsonapi.MarshalPayload(out, body); err != nil {
@@ -41,7 +59,7 @@ func TfcCallback(callbackUrl string, accessToken string, body *RunTaskResponse, 
 	return err
 }
 
-func SuccessfulRunTask(w http.ResponseWriter, r *http.Request) {
+func (m *TfcWebhookManager) SuccessfulRunTask(w http.ResponseWriter, r *http.Request) {
 	timeout := r.URL.Query().Get("timeout")
 	if timeout != "" {
 		i, err := strconv.Atoi(timeout)
@@ -59,16 +77,21 @@ func SuccessfulRunTask(w http.ResponseWriter, r *http.Request) {
 
 	runTaskResp := &RunTaskResponse{
 		Status:  "passed",
-		Message: fmt.Sprintf("Successful Run Task Integration initiated by %s", runTaskReq.RunID),
+		Message: fmt.Sprintf("Successful Run Task Integration initiated by %s [reset]", runTaskReq.RunID),
 		Url:     "http://localhost:10000/success",
 	}
 
-	if err := TfcCallback(runTaskReq.TaskResultCallbackUrl, runTaskReq.AccessToken, runTaskResp, timeout); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+	m.jobs <- &TfcWebhookJob{
+		AccessToken: runTaskReq.AccessToken,
+		CallbackUrl: runTaskReq.TaskResultCallbackUrl,
+		Response:    runTaskResp,
+		Timeout:     timeout,
 	}
+
+	w.WriteHeader(http.StatusOK)
 }
 
-func FailedRunTask(w http.ResponseWriter, r *http.Request) {
+func (m *TfcWebhookManager) FailedRunTask(w http.ResponseWriter, r *http.Request) {
 	timeout := r.URL.Query().Get("timeout")
 	if timeout != "" {
 		i, err := strconv.Atoi(timeout)
@@ -86,13 +109,18 @@ func FailedRunTask(w http.ResponseWriter, r *http.Request) {
 
 	runTaskResp := &RunTaskResponse{
 		Status:  "failed",
-		Message: fmt.Sprintf("Failed Run Task Integration initiated by %s", runTaskReq.RunID),
+		Message: fmt.Sprintf("Failed Run Task Integration initiated by %s [reset]", runTaskReq.RunID),
 		Url:     "http://localhost:10000/failed",
 	}
 
-	if err := TfcCallback(runTaskReq.TaskResultCallbackUrl, runTaskReq.AccessToken, runTaskResp, timeout); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+	m.jobs <- &TfcWebhookJob{
+		AccessToken: runTaskReq.AccessToken,
+		CallbackUrl: runTaskReq.TaskResultCallbackUrl,
+		Response:    runTaskResp,
+		Timeout:     timeout,
 	}
+
+	w.WriteHeader(http.StatusOK)
 }
 
 func Root(w http.ResponseWriter, r *http.Request) {
@@ -100,15 +128,20 @@ func Root(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleRequests() {
+	manager := &TfcWebhookManager{
+		jobs: make(chan *TfcWebhookJob, 1000),
+	}
+
+	go manager.sendWebhookResponse()
+
 	r := mux.NewRouter()
 	r.HandleFunc("/", Root).Methods("GET")
-	r.HandleFunc("/success", SuccessfulRunTask).Methods("POST")
-	r.HandleFunc("/failed", FailedRunTask).Methods("POST")
+	r.HandleFunc("/success", manager.SuccessfulRunTask).Methods("POST")
+	r.HandleFunc("/failed", manager.FailedRunTask).Methods("POST")
 	http.Handle("/", r)
 	log.Fatal(http.ListenAndServe(":10000", nil))
 }
 
 func main() {
 	handleRequests()
-	log.Println("Started server on port 10000")
 }
