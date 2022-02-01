@@ -64,7 +64,7 @@ func (m *TfcWebhookManager) SuccessfulRunTask(w http.ResponseWriter, r *http.Req
 	if timeout != "" {
 		i, err := strconv.Atoi(timeout)
 		if err != nil {
-			http.Error(w, "timeout query param must be a string", http.StatusInternalServerError)
+			http.Error(w, "timeout query param must be an integer", http.StatusInternalServerError)
 		}
 		if i <= 0 {
 			http.Error(w, "timeout query param must be greater than 0 seconds", http.StatusInternalServerError)
